@@ -1,1 +1,312 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[12]:
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+
+# In[13]:
+
+
+#!pip install gdown
+import gdown
+
+
+# In[3]:
+
+
+#這行執行要注意，不要一直下載東西
+"""
+f1id = '1SvJ_IiHr-ndJDG_sBf6NCn0lMKUxPIlf'
+f2id = '1lZPv46zul32Xbr1qHES66YRzMa-A7MzB'
+url = 'https://drive.google.com/uc?id=%s'%(f1id)
+output_train = 'train.csv'
+gdown.download(url, output_train, quiet=False)
+url = 'https://drive.google.com/uc?id=%s'%(f2id)
+output_test = 'test.csv'
+gdown.download(url, output_test, quiet=False)
+"""
+
+
+# In[14]:
+
+
+import seaborn as sns
+import math
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from sklearn import metrics
+
+
+# In[15]:
+
+
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+print("train.shape",train.shape)
+print("test.shape",test.shape)
+
+
+# In[7]:
+
+
+# 檢查每個Column的資料類型
+#for i in train.columns:
+#    train_groupby = train.groupby(i)
+#    print(train_groupby.size())
+#("違約比例: ",train_groupby.size()[1]/(train_groupby.size()[0]+train_groupby.size()[1]))
+
+
+# In[5]:
+
+
+#bacno：歸戶帳號  txkey：交易序號  locdt：授權日期  loctm：授權時間  cano：交易卡號  etymd：交易型態  mchno：特店代號 acqic：收單行代碼
+
+#mcc：MCC_CODE  conam：交易金額-台幣 (經過轉換)  ecfg：網路交易註記  insfg：分期交易註記  iterm：分期期數  stocn：消費地國別
+
+#scity：消費城市 #stscd：狀態碼  ovrlt：超額註記碼  flbmk：Fallback 註記  hcefg：支付形態  csmcu：消費地幣別  flg_3dsmk：3DS 交易註記
+
+#fraud_ind：盜刷註記
+train.head(10)
+
+
+# In[16]:
+
+
+#盜刷註記與其他變數的相關係數
+train.corr()["fraud_ind"]
+
+
+# In[6]:
+
+
+#檢查是否有缺值 (先拿掉)
+train = train.dropna()
+test = test.dropna()
+#有缺值，直接拿掉
+
+
+# In[10]:
+
+
+#bacno：歸戶帳號  txkey：交易序號  locdt：授權日期  loctm：授權時間  cano：交易卡號  etymd：交易型態  mchno：特店代號 acqic：收單行代碼
+
+#mcc：MCC_CODE  conam：交易金額-台幣 (經過轉換)  ecfg：網路交易註記  insfg：分期交易註記  iterm：分期期數  stocn：消費地國別
+
+#scity：消費城市 #stscd：狀態碼  ovrlt：超額註記碼  flbmk：Fallback 註記  hcefg：支付形態  csmcu：消費地幣別  flg_3dsmk：3DS 交易註記
+
+#fraud_ind：盜刷註記
+#畫圖，用hist,橘色為盜刷
+train_col = list(train.columns);
+train_1 = train[train["fraud_ind"]==1] 
+for i in range(0, len(train_col)):
+    plt.figure(i+1,figsize = (10,5))
+    plt.hist(train[train_col[i]], bins = 50,label = "total")
+    plt.hist(train_1[train_col[i]], bins = 50,stacked = True, label = "fraud_ind = 1")
+    plt.title(train_col[i])
+    plt.legend()
+
+#由hist目前看不出有甚麼明顯特徵
+
+
+# In[17]:
+
+
+
+
+
+# In[8]:
+
+
+#把帳號設為index,並刪除因為看起來也是接近0相關
+#train.index = train["bacno"]
+#train = train.drop(columns = ["bacno"])
+#train.head()
+
+
+# In[18]:
+
+
+#preprocessing
+# 授權日期更改
+#locdt：授權日期
+train['weekday'] = train['locdt'] % 7
+#loctm：授權時間 
+train['loctm_hh'] = train['loctm'].apply(lambda x: math.floor(x/10000))
+train['loctm_mm'] = train['loctm'].apply(lambda x: math.floor(x/100)-math.floor(x/10000)*100)
+train['loctm_ss'] = train['loctm'].apply(lambda x: math.floor(x)-math.floor(x/100)*100)
+#拿掉不需要的
+train = train.drop(columns = ['locdt','loctm'])
+
+
+# In[60]:
+
+
+train["loctm_hh"].hist(bins = 50)
+train_1 = train[train["fraud_ind"]==1]
+train_1["loctm_hh"].hist(bins = 50,stacked = True, label = "fraud_ind = 1")
+
+
+# In[ ]:
+
+
+
+
+
+# In[20]:
+
+
+#確認誰的變數是string
+col_num = []
+for i in range(0, len(train.columns)):
+    if train.dtypes[i] != "object":
+        col_num.append(train.columns[i])
+col_num.remove("fraud_ind")
+# ["ecfg", "flbmk","flg_3dsmk","insfg","ovrlt"]
+
+
+# In[80]:
+
+
+from sklearn.preprocessing import StandardScaler
+#模型標準化，非數值變數要做啞變數
+#步驟:把原數值資料刪除做啞變數==>數值資料做標準化之後再跟啞變數做結合==>切割資料
+col_str =  ["ecfg", "flbmk","flg_3dsmk","insfg","ovrlt"]
+train_copy = train.copy()
+train_te = train["fraud_ind"]
+train_str =  pd.get_dummies(train_copy, columns = col_str)
+train_str = train_str.drop(col_num, axis = 1)
+train_str = train_str.drop(["fraud_ind"], axis = 1)
+print(train_str.shape)
+
+train_tr =train_copy.drop(col_str, axis = 1)
+train_tr = train_tr.drop(["fraud_ind"], axis = 1)
+print(train_tr.shape)
+scaler = StandardScaler()
+train_tr = scaler.fit_transform(train_tr)
+train_tr = pd.DataFrame(train_tr,columns = col_num,index = train.index)
+print(train_tr.shape)
+train_tr = pd.concat([train_tr, train_str], axis = 1)
+print(train_tr.shape)
+train_x, test_x, train_y, test_y = train_test_split(train_tr, train_te, test_size = 0.3)
+#測試集
+#test_te = test["fraud_ind"]
+#test_tr = test.drop(["fraud_ind"], axis = 1)
+#test_tr =  pd.get_dummies(test_tr, columns = col_str)
+
+
+
+
+
+
+# In[78]:
+
+
+
+
+
+# In[22]:
+
+
+train_tr.head()
+
+
+# In[23]:
+
+
+#建模,用random forest
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score
+model = RandomForestClassifier(n_estimators=100,n_jobs = -1,random_state =50, min_samples_leaf = 10)
+train_model = model.fit(train_x, train_y)
+
+
+
+# In[24]:
+
+
+# 預測
+test_y_predicted = model.predict(test_x)
+score = f1_score(test_y, test_y_predicted)
+print("F1 score :" ,score)
+#結論一:
+#我覺得這個模型很差，因為他沒有均勻分配違約比例，且違約比例本身比較小，因此猜不違約是比較可能的
+
+
+# In[68]:
+
+
+#使用XGBClassifier
+from xgboost.sklearn import XGBClassifier
+
+
+# In[75]:
+
+
+train_x.columns
+
+
+# In[81]:
+
+
+model_x = XGBClassifier()
+model_x.fit(train_x, train_y)
+
+
+# In[82]:
+
+
+# 預測
+test_y_predicted = model_x.predict(test_x)
+score = f1_score(test_y, test_y_predicted)
+print("F1 score :" ,score)
+#結論一:
+#我覺得這個模型很差，因為他沒有均勻分配違約比例，且違約比例本身比較小，因此猜不違約是比較可能的
+
+
+# In[27]:
+
+
+#乾 模型到底寫去哪了 = =
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, BatchNormalization, Dropout, LeakyReLU
+from tensorflow.keras.optimizers import Adam
+
+
+# In[83]:
+
+
+#建立NN
+model_NN= Sequential()
+model_NN.add(Dense(units=256, input_dim=train_x.shape[1], kernel_initializer='normal', activation='relu')) 
+# Add output layer
+model_NN.add(Dense(units=2, kernel_initializer='normal', activation='softmax'))
+# 編譯: 選擇損失函數、優化方法及成效衡量方式
+model_NN.compile(loss= 'sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy']) 
+
+
+# In[84]:
+
+
+#訓練
+train_history = model_NN.fit(x=train_x, y = train_y, validation_split=0.2, epochs=10, batch_size=800, verbose=2)
+
+
+# In[85]:
+
+
+#檢驗
+scores = model_NN.evaluate(test_x, test_y)
+
+
+# In[ ]:
+
+
+
+
 
