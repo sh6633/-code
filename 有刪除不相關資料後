@@ -1,0 +1,183 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+
+# In[2]:
+
+
+import seaborn as sns
+import math
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from sklearn import metrics
+
+
+# In[3]:
+
+
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+print("train.shape",train.shape)
+print("test.shape",test.shape)
+
+
+# In[4]:
+
+
+#檢查是否有缺值 (先拿掉)
+train = train.dropna()
+test = test.dropna()
+#有缺值，直接拿掉
+
+
+# In[6]:
+
+
+#preprocessing
+# 授權日期更改
+#locdt：授權日期
+train['weekday'] = train['locdt'] % 7
+#loctm：授權時間 
+train['loctm_hh'] = train['loctm'].apply(lambda x: math.floor(x/10000))
+train['loctm_mm'] = train['loctm'].apply(lambda x: math.floor(x/100)-math.floor(x/10000)*100)
+train['loctm_ss'] = train['loctm'].apply(lambda x: math.floor(x)-math.floor(x/100)*100)
+#拿掉不需要的
+train = train.drop(columns = ['locdt','loctm'])
+
+
+# In[7]:
+
+
+col_num = []
+for i in range(0, len(train.columns)):
+    if train.dtypes[i] != "object":
+        col_num.append(train.columns[i])
+col_num.remove("fraud_ind")
+# ["ecfg", "flbmk","flg_3dsmk","insfg","ovrlt"]
+
+
+# In[8]:
+
+
+from sklearn.preprocessing import StandardScaler
+#模型標準化，非數值變數要做啞變數
+#低相關變數 ['bacno' 'cano' 'mcc']
+
+#步驟:把原數值資料刪除做啞變數==>數值資料做標準化之後再跟啞變數做結合==>切割資料
+col_str =  ["ecfg", "flbmk","flg_3dsmk","insfg","ovrlt"]
+train_copy = train.copy()
+train_te = train["fraud_ind"]
+train_str =  pd.get_dummies(train_copy, columns = col_str)
+train_str = train_str.drop(col_num, axis = 1)
+train_str = train_str.drop(["fraud_ind"], axis = 1)
+print(train_str.shape)
+train_tr =train_copy.drop(col_str, axis = 1)
+###增加的這行
+col_low_corr = ["bacno",'cano','mcc']
+train_tr = train_tr.drop(col_low_corr, axis = 1)
+###
+train_tr = train_tr.drop(["fraud_ind"], axis = 1)
+print(train_tr.shape)
+scaler = StandardScaler()
+train_tr = scaler.fit_transform(train_tr)
+###增加的
+col_num.remove("bacno")
+col_num.remove("cano")
+col_num.remove("mcc")
+###
+train_tr = pd.DataFrame(train_tr,columns = col_num,index = train.index)
+print(train_tr.shape)
+train_tr = pd.concat([train_tr, train_str], axis = 1)
+print(train_tr.shape)
+train_x, test_x, train_y, test_y = train_test_split(train_tr, train_te, test_size = 0.3)
+
+
+# In[12]:
+
+
+#建模,用random forest
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score
+model = RandomForestClassifier(n_estimators=100,n_jobs = -1,random_state =50, min_samples_leaf = 10)
+train_model = model.fit(train_x, train_y)
+
+
+# In[13]:
+
+
+# 預測
+test_y_predicted = model.predict(test_x)
+score = f1_score(test_y, test_y_predicted)
+print("F1 score :" ,score)
+
+
+# In[14]:
+
+
+#使用XGBClassifier
+from xgboost.sklearn import XGBClassifier
+
+
+# In[15]:
+
+
+model_x = XGBClassifier()
+model_x.fit(train_x, train_y)
+
+
+# In[16]:
+
+
+# 預測
+test_y_predicted = model_x.predict(test_x)
+score = f1_score(test_y, test_y_predicted)
+print("F1 score :" ,score)
+
+
+# In[9]:
+
+
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten
+
+
+# In[12]:
+
+
+#建立NN
+model_NN= Sequential()
+model_NN.add(Dense(units=256, input_dim=train_x.shape[1], kernel_initializer='normal', activation='relu')) 
+# Add output layer
+model_NN.add(Dense(units=2, kernel_initializer='normal', activation='softmax'))
+# 編譯: 選擇損失函數、優化方法及成效衡量方式
+model_NN.compile(loss= 'sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy']) 
+
+
+# In[13]:
+
+
+train_history = model_NN.fit(x=train_x, y = train_y, validation_split=0.2, epochs=10, batch_size=800, verbose=2) 
+
+
+# In[14]:
+
+
+#檢驗
+scores = model_NN.evaluate(test_x, test_y)
+
+
+# In[ ]:
+
+
+
+
